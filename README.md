@@ -6,7 +6,7 @@ Frontier's Cobra engine uses Audiokinetic Wwise, so the audio lives in `.pck` / 
 
 ## Download
 
-Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it: it asks for the game folder, an output folder and the format you want (wem, wav, mp3, ogg or flac). No Python needed. For anything other than wem, put [`vgmstream-cli.exe`](https://vgmstream.org) (and for mp3/ogg/flac, [`ffmpeg.exe`](https://ffmpeg.org)) next to the exe or on your PATH. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
+Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (wem, wav, mp3, ogg or flac), and click **Extract**. No Python needed. For anything other than wem, put [`vgmstream-cli.exe`](https://vgmstream.org) (and for mp3/ogg/flac, [`ffmpeg.exe`](https://ffmpeg.org)) next to the exe or on your PATH. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
 
 ## Requirements (running from source)
 

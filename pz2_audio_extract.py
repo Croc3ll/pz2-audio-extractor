@@ -92,7 +92,7 @@ def convert(out_dir, fmt, vgmstream, ffmpeg):
     print(f"\nConverted {ok}/{len(wems)} to .{fmt}" + (" (failed ones left as .wem)" if ok < len(wems) else ""))
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(description="Extract Wwise audio from Planet Zoo 2 game files.")
     p.add_argument("game_dir", type=Path, help="Planet Zoo 2 install folder")
     p.add_argument("out_dir", type=Path, help="where to write extracted audio")
@@ -102,7 +102,7 @@ def main():
     p.add_argument("--wav", action="store_const", const="wav", dest="format", help="same as --format wav")
     p.add_argument("--vgmstream", default="vgmstream-cli", help="path to vgmstream-cli (https://vgmstream.org)")
     p.add_argument("--ffmpeg", default="ffmpeg", help="path to ffmpeg (https://ffmpeg.org)")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     if not args.game_dir.is_dir():
         sys.exit(f"Not a folder: {args.game_dir}")
@@ -135,36 +135,111 @@ def main():
         print("Nothing found. Try --all-files (audio may sit in other archive types).")
 
 
-def ask_format():
-    print("\nOutput format:")
-    print("  1) wem   raw game files (no extra tools)")
-    print("  2) wav   needs vgmstream-cli")
-    print("  3) mp3   needs vgmstream-cli + ffmpeg")
-    print("  4) ogg   needs vgmstream-cli + ffmpeg")
-    print("  5) flac  needs vgmstream-cli + ffmpeg")
-    while True:
-        choice = input("Choose 1-5 [2]: ").strip().lower() or "2"
-        if choice in FORMATS:
-            return choice
-        if choice.isdigit() and 1 <= int(choice) <= len(FORMATS):
-            return FORMATS[int(choice) - 1]
-        print("  Please enter a number from 1 to 5.")
+FORMAT_LABELS = {
+    "wem": "WEM: raw game files (no extra tools)",
+    "wav": "WAV: needs vgmstream-cli",
+    "mp3": "MP3: needs vgmstream-cli + ffmpeg",
+    "ogg": "OGG: needs vgmstream-cli + ffmpeg",
+    "flac": "FLAC: needs vgmstream-cli + ffmpeg",
+}
 
 
-def interactive():
-    """Double-clicked with no arguments: ask for the folders and format instead."""
-    print("Planet Zoo 2 Audio Extractor\n")
-    game = input("Planet Zoo 2 install folder: ").strip().strip('"')
-    out = input("Output folder [pz2_audio]: ").strip().strip('"') or "pz2_audio"
-    sys.argv[1:] = [game, out, "--format", ask_format()]
+def gui():
+    """Opened with no arguments (e.g. double-clicked): show a window instead."""
+    import queue
+    import threading
+    import tkinter as tk
+    from tkinter import filedialog, ttk
+
+    root = tk.Tk()
+    root.title("Planet Zoo 2 Audio Extractor")
+    root.minsize(560, 460)
+    frm = ttk.Frame(root, padding=12)
+    frm.pack(fill="both", expand=True)
+    frm.columnconfigure(1, weight=1)
+
+    game = tk.StringVar()
+    out = tk.StringVar(value=str(Path.home() / "Desktop" / "pz2_audio"))
+    fmt = tk.StringVar(value="wav")
+    all_files = tk.BooleanVar()
+
+    def folder_row(row, label, var):
+        ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(frm, textvariable=var).grid(row=row, column=1, sticky="ew", padx=6)
+        ttk.Button(frm, text="Browse...", command=lambda: var.set(
+            filedialog.askdirectory(title=label, initialdir=var.get() or None) or var.get())
+        ).grid(row=row, column=2)
+
+    folder_row(0, "Planet Zoo 2 folder:", game)
+    folder_row(1, "Output folder:", out)
+
+    box = ttk.LabelFrame(frm, text="Output format", padding=8)
+    box.grid(row=2, column=0, columnspan=3, sticky="ew", pady=8)
+    for key, label in FORMAT_LABELS.items():
+        ttk.Radiobutton(box, text=label, value=key, variable=fmt).pack(anchor="w")
+    ttk.Checkbutton(frm, text="Scan every file (slower; use if nothing is found)",
+                    variable=all_files).grid(row=3, column=0, columnspan=3, sticky="w")
+
+    start = ttk.Button(frm, text="Extract")
+    start.grid(row=4, column=0, columnspan=3, pady=8)
+    log = tk.Text(frm, height=12, state="disabled", wrap="word")
+    log.grid(row=5, column=0, columnspan=3, sticky="nsew")
+    frm.rowconfigure(5, weight=1)
+
+    lines = queue.Queue()
+
+    class QueueWriter:
+        def write(self, text):
+            lines.put(text)
+
+        def flush(self):
+            pass
+
+    def pump():
+        while not lines.empty():
+            text = lines.get()
+            log.configure(state="normal")
+            if text.startswith("\r"):  # progress line: overwrite the current one
+                log.delete("end-1c linestart", "end-1c")
+                text = text[1:]
+            log.insert("end", text)
+            log.see("end")
+            log.configure(state="disabled")
+        root.after(100, pump)
+
+    def work(argv):
+        sys.stdout = sys.stderr = QueueWriter()
+        try:
+            main(argv)
+            print("\nDone!")
+        except SystemExit as e:
+            if e.code not in (None, 0):
+                print(f"\nError: {e.code}")
+        except Exception as e:
+            print(f"\nError: {e}")
+        finally:
+            root.after(0, lambda: start.configure(state="normal"))
+
+    def run():
+        if not game.get().strip():
+            lines.put("Pick your Planet Zoo 2 install folder first.\n")
+            return
+        argv = [game.get().strip(), out.get().strip() or "pz2_audio", "--format", fmt.get()]
+        if all_files.get():
+            argv.append("--all-files")
+        start.configure(state="disabled")
+        log.configure(state="normal")
+        log.delete("1.0", "end")
+        log.configure(state="disabled")
+        threading.Thread(target=work, args=(argv,), daemon=True).start()
+
+    start.configure(command=run)
+    pump()
+    root.mainloop()
 
 
 if __name__ == "__main__":
-    pause = len(sys.argv) == 1
-    if pause:
-        interactive()
-    try:
+    if len(sys.argv) == 1:
+        gui()
+    else:
         main()
-    finally:
-        if pause:
-            input("\nDone. Press Enter to close.")
