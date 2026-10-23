@@ -104,5 +104,22 @@ def main():
         print("Nothing found. Try --all-files (audio may sit in other archive types).")
 
 
+def interactive():
+    """Double-clicked with no arguments: ask for the folders instead."""
+    print("Planet Zoo 2 Audio Extractor\n")
+    game = input("Planet Zoo 2 install folder: ").strip().strip('"')
+    out = input("Output folder [pz2_audio]: ").strip().strip('"') or "pz2_audio"
+    sys.argv[1:] = [game, out]
+    if shutil.which("vgmstream-cli") and input("Convert to .wav too? [Y/n]: ").strip().lower() != "n":
+        sys.argv.append("--wav")
+
+
 if __name__ == "__main__":
-    main()
+    pause = len(sys.argv) == 1
+    if pause:
+        interactive()
+    try:
+        main()
+    finally:
+        if pause:
+            input("\nDone. Press Enter to close.")

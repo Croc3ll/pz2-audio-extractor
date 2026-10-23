@@ -4,7 +4,11 @@ A small, dependency-free Python tool that pulls the sound effects, animal calls 
 
 Frontier's Cobra engine uses Audiokinetic Wwise, so the audio lives in `.pck` / `.bnk` / `.wem` files (sometimes inside other archives). Every Wwise sound is a RIFF/WAVE blob; this tool scans for them, saves each as `.wem`, removes duplicates, and can convert them to `.wav` with [vgmstream](https://vgmstream.org).
 
-## Requirements
+## Download
+
+Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it: it asks for the game folder and an output folder. No Python needed. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
+
+## Requirements (running from source)
 
 - Python 3.8+
 - Optional: `vgmstream-cli` for `.wav` conversion ([download](https://vgmstream.org))
