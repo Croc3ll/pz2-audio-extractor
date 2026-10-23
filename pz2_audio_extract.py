@@ -60,16 +60,36 @@ def scan_file(path, out_dir, seen, root):
     return count
 
 
-def convert(out_dir, vgmstream):
+FORMATS = ["wem", "wav", "mp3", "ogg", "flac"]
+
+
+def find_tool(path_or_name):
+    """PATH, then an explicit path, then next to this exe/script (so users can just drop tools beside it)."""
+    here = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
+    beside = shutil.which(Path(path_or_name).name, path=str(here))
+    return shutil.which(path_or_name) or (path_or_name if Path(path_or_name).is_file() else None) or beside
+
+
+def convert(out_dir, fmt, vgmstream, ffmpeg):
+    """Turn every extracted .wem into fmt; the .wem (and temp .wav) are removed on success."""
     wems = list(out_dir.rglob("*.wem"))
     ok = 0
     for i, wem in enumerate(wems, 1):
         wav = wem.with_suffix(".wav")
-        r = subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True)
-        if r.returncode == 0:
-            ok += 1
+        if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True).returncode == 0:
+            if fmt == "wav":
+                ok += 1
+                wem.unlink()
+            else:
+                dest = wem.with_suffix("." + fmt)
+                r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), str(dest)],
+                                   capture_output=True)
+                wav.unlink()
+                if r.returncode == 0:
+                    ok += 1
+                    wem.unlink()
         print(f"\r  converting {i}/{len(wems)}", end="", flush=True)
-    print(f"\nConverted {ok}/{len(wems)} to .wav")
+    print(f"\nConverted {ok}/{len(wems)} to .{fmt}" + (" (failed ones left as .wem)" if ok < len(wems) else ""))
 
 
 def main():
@@ -77,13 +97,26 @@ def main():
     p.add_argument("game_dir", type=Path, help="Planet Zoo 2 install folder")
     p.add_argument("out_dir", type=Path, help="where to write extracted audio")
     p.add_argument("--all-files", action="store_true", help="scan every file, not just audio/archive extensions")
-    p.add_argument("--wav", action="store_true", help="convert .wem to .wav with vgmstream-cli")
-    p.add_argument("--vgmstream", default=shutil.which("vgmstream-cli") or "vgmstream-cli",
-                   help="path to vgmstream-cli (https://vgmstream.org)")
+    p.add_argument("--format", choices=FORMATS, default="wem",
+                   help="output format: wem (raw, default), wav (needs vgmstream-cli), mp3/ogg/flac (also need ffmpeg)")
+    p.add_argument("--wav", action="store_const", const="wav", dest="format", help="same as --format wav")
+    p.add_argument("--vgmstream", default="vgmstream-cli", help="path to vgmstream-cli (https://vgmstream.org)")
+    p.add_argument("--ffmpeg", default="ffmpeg", help="path to ffmpeg (https://ffmpeg.org)")
     args = p.parse_args()
 
     if not args.game_dir.is_dir():
         sys.exit(f"Not a folder: {args.game_dir}")
+    # Check the converters before a long scan, not after.
+    vgmstream = ffmpeg = None
+    if args.format != "wem":
+        vgmstream = find_tool(args.vgmstream)
+        if not vgmstream:
+            sys.exit("vgmstream-cli not found; download it from https://vgmstream.org and put it next to this program (or pass --vgmstream)")
+    if args.format not in ("wem", "wav"):
+        ffmpeg = find_tool(args.ffmpeg)
+        if not ffmpeg:
+            sys.exit("ffmpeg not found; download it from https://ffmpeg.org and put it next to this program (or pass --ffmpeg)")
+
     files = [f for f in args.game_dir.rglob("*")
              if f.is_file() and (args.all_files or f.suffix.lower() in DEFAULT_EXTS)]
     print(f"Scanning {len(files)} files...")
@@ -96,22 +129,34 @@ def main():
         total += n
     print(f"Extracted {total} unique sounds to {args.out_dir}")
 
-    if total and args.wav:
-        if not shutil.which(args.vgmstream) and not Path(args.vgmstream).is_file():
-            sys.exit("vgmstream-cli not found; download it from https://vgmstream.org and pass --vgmstream")
-        convert(args.out_dir, args.vgmstream)
+    if total and args.format != "wem":
+        convert(args.out_dir, args.format, vgmstream, ffmpeg)
     elif total == 0 and not args.all_files:
         print("Nothing found. Try --all-files (audio may sit in other archive types).")
 
 
+def ask_format():
+    print("\nOutput format:")
+    print("  1) wem   raw game files (no extra tools)")
+    print("  2) wav   needs vgmstream-cli")
+    print("  3) mp3   needs vgmstream-cli + ffmpeg")
+    print("  4) ogg   needs vgmstream-cli + ffmpeg")
+    print("  5) flac  needs vgmstream-cli + ffmpeg")
+    while True:
+        choice = input("Choose 1-5 [2]: ").strip().lower() or "2"
+        if choice in FORMATS:
+            return choice
+        if choice.isdigit() and 1 <= int(choice) <= len(FORMATS):
+            return FORMATS[int(choice) - 1]
+        print("  Please enter a number from 1 to 5.")
+
+
 def interactive():
-    """Double-clicked with no arguments: ask for the folders instead."""
+    """Double-clicked with no arguments: ask for the folders and format instead."""
     print("Planet Zoo 2 Audio Extractor\n")
     game = input("Planet Zoo 2 install folder: ").strip().strip('"')
     out = input("Output folder [pz2_audio]: ").strip().strip('"') or "pz2_audio"
-    sys.argv[1:] = [game, out]
-    if shutil.which("vgmstream-cli") and input("Convert to .wav too? [Y/n]: ").strip().lower() != "n":
-        sys.argv.append("--wav")
+    sys.argv[1:] = [game, out, "--format", ask_format()]
 
 
 if __name__ == "__main__":
