@@ -1,0 +1,4 @@
+out/
+*.wem
+*.wav
+__pycache__/
