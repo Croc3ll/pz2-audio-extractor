@@ -19,9 +19,10 @@ import shutil
 import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-DEFAULT_EXTS = {".pck", ".bnk", ".wem", ".ovl", ".ovs"}
+DEFAULT_EXTS = {".aux", ".pck", ".bnk", ".wem", ".ovl", ".ovs"}
 MIN_BLOB = 64
 
 
@@ -64,31 +65,39 @@ FORMATS = ["wem", "wav", "mp3", "ogg", "flac"]
 
 
 def find_tool(path_or_name):
-    """PATH, then an explicit path, then next to this exe/script (so users can just drop tools beside it)."""
+    """PATH, then an explicit path, then next to this exe/script, then the copy bundled inside the exe."""
     here = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
-    beside = shutil.which(Path(path_or_name).name, path=str(here))
-    return shutil.which(path_or_name) or (path_or_name if Path(path_or_name).is_file() else None) or beside
+    name = Path(path_or_name).name
+    beside = shutil.which(name, path=str(here))
+    bundled = shutil.which(name, path=str(Path(getattr(sys, "_MEIPASS", here)) / "vgmstream"))
+    return shutil.which(path_or_name) or (path_or_name if Path(path_or_name).is_file() else None) or beside or bundled
 
 
 def convert(out_dir, fmt, vgmstream, ffmpeg):
     """Turn every extracted .wem into fmt; the .wem (and temp .wav) are removed on success."""
+    # No console window popping up per call when running as the windowed exe.
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+    def one(wem):
+        wav = wem.with_suffix(".wav")
+        if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True, creationflags=flags).returncode:
+            return False
+        if fmt != "wav":
+            r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), str(wem.with_suffix("." + fmt))],
+                               capture_output=True, creationflags=flags)
+            wav.unlink()
+            if r.returncode:
+                return False
+        wem.unlink()
+        return True
+
     wems = list(out_dir.rglob("*.wem"))
     ok = 0
-    for i, wem in enumerate(wems, 1):
-        wav = wem.with_suffix(".wav")
-        if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True).returncode == 0:
-            if fmt == "wav":
-                ok += 1
-                wem.unlink()
-            else:
-                dest = wem.with_suffix("." + fmt)
-                r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), str(dest)],
-                                   capture_output=True)
-                wav.unlink()
-                if r.returncode == 0:
-                    ok += 1
-                    wem.unlink()
-        print(f"\r  converting {i}/{len(wems)}", end="", flush=True)
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        for i, done in enumerate(pool.map(one, wems), 1):
+            ok += done
+            if i % 25 == 0 or i == len(wems):
+                print(f"\r  converting {i}/{len(wems)}", end="", flush=True)
     print(f"\nConverted {ok}/{len(wems)} to .{fmt}" + (" (failed ones left as .wem)" if ok < len(wems) else ""))
 
 
@@ -137,10 +146,10 @@ def main(argv=None):
 
 FORMAT_LABELS = {
     "wem": "WEM: raw game files (no extra tools)",
-    "wav": "WAV: needs vgmstream-cli",
-    "mp3": "MP3: needs vgmstream-cli + ffmpeg",
-    "ogg": "OGG: needs vgmstream-cli + ffmpeg",
-    "flac": "FLAC: needs vgmstream-cli + ffmpeg",
+    "wav": "WAV: playable audio",
+    "mp3": "MP3: needs ffmpeg",
+    "ogg": "OGG: needs ffmpeg",
+    "flac": "FLAC: needs ffmpeg",
 }
 
 

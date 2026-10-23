@@ -2,11 +2,11 @@
 
 A small, dependency-free Python tool that pulls the sound effects, animal calls and music out of **Planet Zoo 2**.
 
-Frontier's Cobra engine uses Audiokinetic Wwise, so the audio lives in `.pck` / `.bnk` / `.wem` files (sometimes inside other archives). Every Wwise sound is a RIFF/WAVE blob; this tool scans for them, saves each as `.wem`, removes duplicates, and can convert them to `.wav` with [vgmstream](https://vgmstream.org).
+Frontier's Cobra engine uses Audiokinetic Wwise. In Planet Zoo 2 the sound banks are stored as `.aux` files in `Win64/ovldata/Content0/Audio` (about 45,000 sounds: animals, music, crowds, ambience and so on). Every Wwise sound is a RIFF/WAVE blob; this tool scans for them, saves each as `.wem`, removes duplicates, and can convert them to `.wav` with [vgmstream](https://vgmstream.org).
 
 ## Download
 
-Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (wem, wav, mp3, ogg or flac), and click **Extract**. No Python needed. For anything other than wem, put [`vgmstream-cli.exe`](https://vgmstream.org) (and for mp3/ogg/flac, [`ffmpeg.exe`](https://ffmpeg.org)) next to the exe or on your PATH. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
+Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (wem, wav, mp3, ogg or flac), and click **Extract**. No Python needed. The exe has [vgmstream](https://vgmstream.org) built in, so WAV works straight away. For mp3, ogg or flac you also need [`ffmpeg.exe`](https://ffmpeg.org), either next to the exe or on your PATH. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
 
 ## Requirements (running from source)
 
@@ -27,7 +27,7 @@ python pz2_audio_extract.py "<game folder>" out --format mp3 --vgmstream C:/tool
 
 | Option | What it does |
 | --- | --- |
-| `--all-files` | Scan every file, not just `.pck .bnk .wem .ovl .ovs` |
+| `--all-files` | Scan every file, not just `.aux .pck .bnk .wem .ovl .ovs` |
 | `--format FMT` | `wem` (raw, default), `wav` (needs vgmstream), `mp3` / `ogg` / `flac` (needs vgmstream + ffmpeg). Converted `.wem` files are removed |
 | `--wav` | Same as `--format wav` |
 | `--vgmstream PATH` | Location of `vgmstream-cli` (default: PATH, or next to the program) |
@@ -43,4 +43,4 @@ Output keeps the game's folder layout; each file is named `<source>_<hex offset>
 
 ## License
 
-MIT
+MIT. The release exe bundles [vgmstream](https://github.com/vgmstream/vgmstream) (r2117), which is under its own permissive license (see `vgmstream-LICENSE.txt` in the release).
