@@ -12,9 +12,12 @@ Usage:
     python pz2_audio_extract.py <game_dir> out --wav --vgmstream path/to/vgmstream-cli.exe
 """
 import argparse
+import gzip
 import hashlib
+import json
 import mmap
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -40,18 +43,44 @@ def find_riff_blobs(data):
         pos = data.find(b"RIFF", pos + 4)
 
 
-def scan_file(path, out_dir, seen, root):
+def load_names():
+    """Content hash -> sound name, built from the game's Wwise events by tools/build_names.py."""
+    here = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    try:
+        with gzip.open(here / "names.json.gz", "rt", encoding="utf-8") as f:
+            return json.load(f)
+    except OSError:
+        return {}
+
+
+def category_of(path):
+    """animals_media_animals_media_bnk_S.aux -> animals (the game's audio folders are <category>_Media)."""
+    stem = path.stem
+    cut = stem.lower().find("_media")
+    return stem[:cut] if cut > 0 else None
+
+
+def safe(name):
+    return re.sub(r'[<>:"/\\|?*]', "_", name)
+
+
+def scan_file(path, out_dir, seen, root, names):
     count = 0
     try:
         with open(path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
             rel = path.relative_to(root).with_suffix("")
+            category = category_of(path)
+            folder = out_dir / category if category else out_dir / rel.parent
             for offset, size in find_riff_blobs(data):
                 blob = data[offset:offset + size]
                 digest = hashlib.sha1(blob).hexdigest()
                 if digest in seen:
                     continue
                 seen.add(digest)
-                target = out_dir / rel.parent / f"{rel.name}_{offset:08x}.wem"
+                name = names.get(digest[:16])
+                target = folder / f"{safe(name)}.wem" if name else folder / f"{rel.name}_{offset:08x}.wem"
+                if target.exists():
+                    target = target.with_name(f"{target.stem}_{offset:08x}.wem")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(blob)
                 count += 1
@@ -69,7 +98,8 @@ def find_tool(path_or_name):
     here = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
     name = Path(path_or_name).name
     beside = shutil.which(name, path=str(here))
-    bundled = shutil.which(name, path=str(Path(getattr(sys, "_MEIPASS", here)) / "vgmstream"))
+    inside = Path(getattr(sys, "_MEIPASS", here))
+    bundled = shutil.which(name, path=os.pathsep.join(str(inside / d) for d in ("vgmstream", "ffmpeg")))
     return shutil.which(path_or_name) or (path_or_name if Path(path_or_name).is_file() else None) or beside or bundled
 
 
@@ -130,9 +160,12 @@ def main(argv=None):
              if f.is_file() and (args.all_files or f.suffix.lower() in DEFAULT_EXTS)]
     print(f"Scanning {len(files)} files...")
 
+    names = load_names()
+    if names:
+        print(f"Loaded {len(names)} sound names")
     seen, total = set(), 0
     for f in files:
-        n = scan_file(f, args.out_dir, seen, args.game_dir)
+        n = scan_file(f, args.out_dir, seen, args.game_dir, names)
         if n:
             print(f"  {n:5d}  {f.relative_to(args.game_dir)}")
         total += n
@@ -146,10 +179,10 @@ def main(argv=None):
 
 FORMAT_LABELS = {
     "wem": "WEM: raw game files (no extra tools)",
-    "wav": "WAV: playable audio",
-    "mp3": "MP3: needs ffmpeg",
-    "ogg": "OGG: needs ffmpeg",
-    "flac": "FLAC: needs ffmpeg",
+    "wav": "WAV: uncompressed, best quality",
+    "mp3": "MP3: small, plays anywhere",
+    "ogg": "OGG: small",
+    "flac": "FLAC: lossless, smaller than WAV",
 }
 
 

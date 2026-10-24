@@ -6,7 +6,7 @@ Frontier's Cobra engine uses Audiokinetic Wwise. In Planet Zoo 2 the sound banks
 
 ## Download
 
-Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (wem, wav, mp3, ogg or flac), and click **Extract**. No Python needed. The exe has [vgmstream](https://vgmstream.org) built in, so WAV works straight away. For mp3, ogg or flac you also need [`ffmpeg.exe`](https://ffmpeg.org), either next to the exe or on your PATH. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
+Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (wem, wav, mp3, ogg or flac), and click **Extract**. No Python needed. Everything is built in ([vgmstream](https://vgmstream.org) and [ffmpeg](https://ffmpeg.org)), so every format works straight away. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
 
 ## Requirements (running from source)
 
@@ -33,14 +33,19 @@ python pz2_audio_extract.py "<game folder>" out --format mp3 --vgmstream C:/tool
 | `--vgmstream PATH` | Location of `vgmstream-cli` (default: PATH, or next to the program) |
 | `--ffmpeg PATH` | Location of `ffmpeg` (default: PATH, or next to the program) |
 
-Output keeps the game's folder layout; each file is named `<source>_<hex offset>.wem`.
+## Sound names
+
+Sounds are sorted into a folder per category (`animals`, `music`, `crowd`, `staff`, ...) and named after the Wwise event that plays them, e.g. `animals/ds_Vox_Call_BactrianCamel_adult_01.wav`. The number at the end separates variations of the same sound.
+
+About 13,000 sounds get a real name. Sounds whose event name isn't known get `Unknown_<event id>_NN` (variations stay together), and sounds that no event plays get `Unknown_NN`. If a game update changes a sound, it falls back to `<source>_<offset>`.
+
+The names come from `names.json.gz`, built by `tools/build_names.py` using [cobra-tools](https://github.com/OpenNaja/cobra-tools) (see the script for how to rerun it after a game update).
 
 ## Notes
 
-- Wwise sounds have numeric IDs, not names, so files won't have friendly names.
 - Extracted audio is Frontier's copyrighted material: for personal use only, don't redistribute it.
 - Not affiliated with Frontier Developments.
 
 ## License
 
-MIT. The release exe bundles [vgmstream](https://github.com/vgmstream/vgmstream) (r2117), which is under its own permissive license (see `vgmstream-LICENSE.txt` in the release).
+MIT. The release exe bundles [vgmstream](https://github.com/vgmstream/vgmstream) (r2117), under its own permissive license, and [ffmpeg](https://ffmpeg.org) (n8.1 LGPL build by [BtbN](https://github.com/BtbN/FFmpeg-Builds)), under the LGPL v3. Both license files are attached to each release. Sound names were derived with the help of [cobra-tools](https://github.com/OpenNaja/cobra-tools).
