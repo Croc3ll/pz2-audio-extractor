@@ -95,6 +95,8 @@ def scan_file(path, out_dir, seen, root, names, only=""):
                 seen.add(digest)
                 name = names.get(digest[:16])
                 target = folder / f"{safe(name)}.wem" if name else folder / f"{rel.name}_{offset:08x}.wem"
+                if name and name.startswith("Unknown"):  # keep the named sounds easy to browse
+                    target = folder / "unknown" / target.name
                 if only and only not in target.stem.lower():
                     continue
                 if target.exists():

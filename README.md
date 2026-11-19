@@ -38,7 +38,7 @@ python pz2_audio_extract.py "<game folder>" out --format flac --vgmstream C:/too
 
 Sounds are sorted into a folder per category (`animals`, `music`, `crowd`, `staff`, ..., plus `voice/<language>` for the career voice-over) and named after the Wwise event that plays them, e.g. `animals/ds_Vox_Call_BactrianCamel_adult_01.wav`. The number at the end separates variations of the same sound.
 
-About 13,000 sounds get a real name (the event names Planet Zoo 2 keeps in its data files; the rest it only stores as numbers). Sounds whose event name isn't known get `Unknown_<event id>_NN` (variations stay together), and sounds that no event plays get `Unknown_NN`. If a game update changes a sound, it falls back to `<source>_<offset>`.
+About 13,000 sounds get a real name (the event names Planet Zoo 2 keeps in its data files; the rest it only stores as numbers). Sounds whose event name isn't known get `Unknown_<event id>_NN` (variations stay together), and sounds that no event plays get `Unknown_NN`. These go in an `unknown` subfolder inside each category, so the named sounds are easy to browse. If a game update changes a sound, it falls back to `<source>_<offset>`.
 
 The names come from `names.json.gz`, built by `tools/build_names.py` using [cobra-tools](https://github.com/OpenNaja/cobra-tools) (see the script for how to rerun it after a game update).
 
