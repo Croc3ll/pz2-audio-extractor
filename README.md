@@ -6,7 +6,7 @@ Frontier's Cobra engine uses Audiokinetic Wwise. In Planet Zoo 2 the sound banks
 
 ## Download
 
-Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (wem, wav, mp3, ogg or flac), and click **Extract**. No Python needed. Everything is built in ([vgmstream](https://vgmstream.org) and [ffmpeg](https://ffmpeg.org)), so every format works straight away. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
+Grab `pz2-audio-extractor.exe` from [Releases](https://github.com/Croc3ll/pz2-audio-extractor/releases) and double-click it. A window opens: browse to your game folder and an output folder, pick a format (FLAC is the default; WAV, OGG or raw WEM also work), and click **Extract**. No Python needed. Everything is built in ([vgmstream](https://vgmstream.org) and [ffmpeg](https://ffmpeg.org)), so every format works straight away. (Windows SmartScreen may warn because the exe is unsigned: click "More info" → "Run anyway".)
 
 ## Requirements (running from source)
 
@@ -22,13 +22,13 @@ python pz2_audio_extract.py "C:/Program Files (x86)/Steam/steamapps/common/Plane
 Convert to another format:
 
 ```bash
-python pz2_audio_extract.py "<game folder>" out --format mp3 --vgmstream C:/tools/vgmstream/vgmstream-cli.exe
+python pz2_audio_extract.py "<game folder>" out --format flac --vgmstream C:/tools/vgmstream/vgmstream-cli.exe
 ```
 
 | Option | What it does |
 | --- | --- |
 | `--all-files` | Scan every file, not just `.aux .pck .bnk .wem .ovl .ovs` |
-| `--format FMT` | `wem` (raw, default), `wav` (needs vgmstream), `mp3` / `ogg` / `flac` (needs vgmstream + ffmpeg). Converted `.wem` files are removed |
+| `--format FMT` | `wem` (raw, default), `wav` (needs vgmstream), `flac` / `ogg` (needs vgmstream + ffmpeg; without ffmpeg, or if one fails, the sound is saved as `.wav`). Converted `.wem` files are removed |
 | `--wav` | Same as `--format wav` |
 | `--only TEXT` | Only save sounds whose name contains TEXT, e.g. `--only lion` (also in the window) |
 | `--vgmstream PATH` | Location of `vgmstream-cli` (default: PATH, or next to the program) |
@@ -44,7 +44,7 @@ The names come from `names.json.gz`, built by `tools/build_names.py` using [cobr
 
 ## Notes
 
-- Most game sounds are stored at 16 kHz mono (phone-call quality) to save space, so they sound a bit dull even as WAV. MP3 is saved at the highest bitrate the format allows for that rate, and OGG at quality 8.
+- Most game sounds are stored at 16 kHz mono (phone-call quality) to save space, so they sound a bit dull even as WAV. FLAC and WAV keep that quality exactly; OGG is saved at quality 8.
 
 - Extracted audio is Frontier's copyrighted material: for personal use only, don't redistribute it.
 - Not affiliated with Frontier Developments.

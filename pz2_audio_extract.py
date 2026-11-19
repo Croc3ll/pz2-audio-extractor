@@ -22,6 +22,7 @@ import shutil
 import struct
 import subprocess
 import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -92,9 +93,9 @@ def scan_file(path, out_dir, seen, root, names, only=""):
     return count
 
 
-FORMATS = ["wem", "wav", "mp3", "ogg", "flac"]
-# ffmpeg's defaults pick ~24 kbps for the game's 16 kHz sounds, which audibly muddies them.
-QUALITY = {"mp3": ["-b:a", "192k"], "ogg": ["-q:a", "8"]}
+FORMATS = ["wem", "wav", "ogg", "flac"]
+# ffmpeg's default OGG quality audibly muddies the game's 16 kHz sounds.
+QUALITY = {"ogg": ["-q:a", "8"]}
 
 
 def find_tool(path_or_name):
@@ -108,32 +109,38 @@ def find_tool(path_or_name):
 
 
 def convert(out_dir, fmt, vgmstream, ffmpeg):
-    """Turn every extracted .wem into fmt; the .wem (and temp .wav) are removed on success."""
+    """Turn every extracted .wem into fmt. If that step fails (or there's no ffmpeg) the sound stays as .wav;
+    only a sound vgmstream can't decode at all stays as .wem."""
     # No console window popping up per call when running as the windowed exe.
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     def one(wem):
         wav = wem.with_suffix(".wav")
         if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True, creationflags=flags).returncode:
-            return False
-        if fmt != "wav":
-            r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *QUALITY.get(fmt, []),
-                                str(wem.with_suffix("." + fmt))],
-                               capture_output=True, creationflags=flags)
-            wav.unlink()
-            if r.returncode:
-                return False
+            return "wem"
         wem.unlink()
-        return True
+        if fmt == "wav" or not ffmpeg:
+            return "wav"
+        r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *QUALITY.get(fmt, []),
+                            str(wav.with_suffix("." + fmt))], capture_output=True, creationflags=flags)
+        if r.returncode:
+            wav.with_suffix("." + fmt).unlink(missing_ok=True)
+            return "wav"
+        wav.unlink()
+        return fmt
 
     wems = list(out_dir.rglob("*.wem"))
-    ok = 0
+    results = Counter()
     with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
-        for i, done in enumerate(pool.map(one, wems), 1):
-            ok += done
+        for i, result in enumerate(pool.map(one, wems), 1):
+            results[result] += 1
             if i % 25 == 0 or i == len(wems):
                 print(f"\r  converting {i}/{len(wems)}", end="", flush=True)
-    print(f"\nConverted {ok}/{len(wems)} to .{fmt}" + (" (failed ones left as .wem)" if ok < len(wems) else ""))
+    print(f"\nConverted {results[fmt]}/{len(wems)} to .{fmt}")
+    if fmt != "wav" and results["wav"]:
+        print(f"  {results['wav']} couldn't be made .{fmt}, so they were saved as .wav instead")
+    if results["wem"]:
+        print(f"  {results['wem']} couldn't be decoded and were left as .wem")
 
 
 def main(argv=None):
@@ -143,7 +150,8 @@ def main(argv=None):
     p.add_argument("--all-files", action="store_true", help="scan every file, not just audio/archive extensions")
     p.add_argument("--only", default="", help="only save sounds whose name contains this text, e.g. lion")
     p.add_argument("--format", choices=FORMATS, default="wem",
-                   help="output format: wem (raw, default), wav (needs vgmstream-cli), mp3/ogg/flac (also need ffmpeg)")
+                   help="output format: wem (raw, default), wav (needs vgmstream-cli), flac/ogg (also need ffmpeg, "
+                        "or they fall back to wav)")
     p.add_argument("--wav", action="store_const", const="wav", dest="format", help="same as --format wav")
     p.add_argument("--vgmstream", default="vgmstream-cli", help="path to vgmstream-cli (https://vgmstream.org)")
     p.add_argument("--ffmpeg", default="ffmpeg", help="path to ffmpeg (https://ffmpeg.org)")
@@ -160,7 +168,7 @@ def main(argv=None):
     if args.format not in ("wem", "wav"):
         ffmpeg = find_tool(args.ffmpeg)
         if not ffmpeg:
-            sys.exit("ffmpeg not found; download it from https://ffmpeg.org and put it next to this program (or pass --ffmpeg)")
+            print(f"ffmpeg not found, so sounds will be saved as .wav instead of .{args.format}")
 
     files = [f for f in args.game_dir.rglob("*")
              if f.is_file() and (args.all_files or f.suffix.lower() in DEFAULT_EXTS)]
@@ -184,11 +192,10 @@ def main(argv=None):
 
 
 FORMAT_LABELS = {
-    "wem": "WEM: raw game files (no extra tools)",
-    "wav": "WAV: uncompressed, best quality",
-    "mp3": "MP3: small, plays anywhere",
-    "ogg": "OGG: small",
-    "flac": "FLAC: lossless, smaller than WAV",
+    "flac": "FLAC: full quality, smaller than WAV (recommended)",
+    "wav": "WAV: full quality, opens in everything",
+    "ogg": "OGG: small, the format Hytale and many games use",
+    "wem": "WEM: raw game files (needs a special player)",
 }
 
 
@@ -208,7 +215,7 @@ def gui():
 
     game = tk.StringVar()
     out = tk.StringVar(value=str(Path.home() / "Desktop" / "pz2_audio"))
-    fmt = tk.StringVar(value="wav")
+    fmt = tk.StringVar(value="flac")
     all_files = tk.BooleanVar()
     only = tk.StringVar()
 
