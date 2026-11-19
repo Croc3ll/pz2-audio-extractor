@@ -30,6 +30,7 @@ python pz2_audio_extract.py "<game folder>" out --format mp3 --vgmstream C:/tool
 | `--all-files` | Scan every file, not just `.aux .pck .bnk .wem .ovl .ovs` |
 | `--format FMT` | `wem` (raw, default), `wav` (needs vgmstream), `mp3` / `ogg` / `flac` (needs vgmstream + ffmpeg). Converted `.wem` files are removed |
 | `--wav` | Same as `--format wav` |
+| `--only TEXT` | Only save sounds whose name contains TEXT, e.g. `--only lion` (also in the window) |
 | `--vgmstream PATH` | Location of `vgmstream-cli` (default: PATH, or next to the program) |
 | `--ffmpeg PATH` | Location of `ffmpeg` (default: PATH, or next to the program) |
 
@@ -42,6 +43,8 @@ About 13,000 sounds get a real name (the event names Planet Zoo 2 keeps in its d
 The names come from `names.json.gz`, built by `tools/build_names.py` using [cobra-tools](https://github.com/OpenNaja/cobra-tools) (see the script for how to rerun it after a game update).
 
 ## Notes
+
+- Most game sounds are stored at 16 kHz mono (phone-call quality) to save space, so they sound a bit dull even as WAV. MP3 is saved at the highest bitrate the format allows for that rate, and OGG at quality 8.
 
 - Extracted audio is Frontier's copyrighted material: for personal use only, don't redistribute it.
 - Not affiliated with Frontier Developments.

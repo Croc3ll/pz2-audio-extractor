@@ -64,7 +64,7 @@ def safe(name):
     return re.sub(r'[<>:"/\\|?*]', "_", name)
 
 
-def scan_file(path, out_dir, seen, root, names):
+def scan_file(path, out_dir, seen, root, names, only=""):
     count = 0
     try:
         with open(path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
@@ -79,6 +79,8 @@ def scan_file(path, out_dir, seen, root, names):
                 seen.add(digest)
                 name = names.get(digest[:16])
                 target = folder / f"{safe(name)}.wem" if name else folder / f"{rel.name}_{offset:08x}.wem"
+                if only and only not in target.stem.lower():
+                    continue
                 if target.exists():
                     target = target.with_name(f"{target.stem}_{offset:08x}.wem")
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +93,8 @@ def scan_file(path, out_dir, seen, root, names):
 
 
 FORMATS = ["wem", "wav", "mp3", "ogg", "flac"]
+# ffmpeg's defaults pick ~24 kbps for the game's 16 kHz sounds, which audibly muddies them.
+QUALITY = {"mp3": ["-b:a", "192k"], "ogg": ["-q:a", "8"]}
 
 
 def find_tool(path_or_name):
@@ -113,7 +117,8 @@ def convert(out_dir, fmt, vgmstream, ffmpeg):
         if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True, creationflags=flags).returncode:
             return False
         if fmt != "wav":
-            r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), str(wem.with_suffix("." + fmt))],
+            r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *QUALITY.get(fmt, []),
+                                str(wem.with_suffix("." + fmt))],
                                capture_output=True, creationflags=flags)
             wav.unlink()
             if r.returncode:
@@ -136,6 +141,7 @@ def main(argv=None):
     p.add_argument("game_dir", type=Path, help="Planet Zoo 2 install folder")
     p.add_argument("out_dir", type=Path, help="where to write extracted audio")
     p.add_argument("--all-files", action="store_true", help="scan every file, not just audio/archive extensions")
+    p.add_argument("--only", default="", help="only save sounds whose name contains this text, e.g. lion")
     p.add_argument("--format", choices=FORMATS, default="wem",
                    help="output format: wem (raw, default), wav (needs vgmstream-cli), mp3/ogg/flac (also need ffmpeg)")
     p.add_argument("--wav", action="store_const", const="wav", dest="format", help="same as --format wav")
@@ -165,7 +171,7 @@ def main(argv=None):
         print(f"Loaded {len(names)} sound names")
     seen, total = set(), 0
     for f in files:
-        n = scan_file(f, args.out_dir, seen, args.game_dir, names)
+        n = scan_file(f, args.out_dir, seen, args.game_dir, names, args.only.strip().lower())
         if n:
             print(f"  {n:5d}  {f.relative_to(args.game_dir)}")
         total += n
@@ -204,6 +210,7 @@ def gui():
     out = tk.StringVar(value=str(Path.home() / "Desktop" / "pz2_audio"))
     fmt = tk.StringVar(value="wav")
     all_files = tk.BooleanVar()
+    only = tk.StringVar()
 
     def folder_row(row, label, var):
         ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w", pady=4)
@@ -221,12 +228,15 @@ def gui():
         ttk.Radiobutton(box, text=label, value=key, variable=fmt).pack(anchor="w")
     ttk.Checkbutton(frm, text="Scan every file (slower; use if nothing is found)",
                     variable=all_files).grid(row=3, column=0, columnspan=3, sticky="w")
+    ttk.Label(frm, text="Only names with:").grid(row=4, column=0, sticky="w", pady=4)
+    ttk.Entry(frm, textvariable=only).grid(row=4, column=1, sticky="ew", padx=6)
+    ttk.Label(frm, text="e.g. lion (blank = all)").grid(row=4, column=2, sticky="w")
 
     start = ttk.Button(frm, text="Extract")
-    start.grid(row=4, column=0, columnspan=3, pady=8)
+    start.grid(row=5, column=0, columnspan=3, pady=8)
     log = tk.Text(frm, height=12, state="disabled", wrap="word")
-    log.grid(row=5, column=0, columnspan=3, sticky="nsew")
-    frm.rowconfigure(5, weight=1)
+    log.grid(row=6, column=0, columnspan=3, sticky="nsew")
+    frm.rowconfigure(6, weight=1)
 
     lines = queue.Queue()
 
@@ -269,6 +279,8 @@ def gui():
         argv = [game.get().strip(), out.get().strip() or "pz2_audio", "--format", fmt.get()]
         if all_files.get():
             argv.append("--all-files")
+        if only.get().strip():
+            argv += ["--only", only.get().strip()]
         start.configure(state="disabled")
         log.configure(state="normal")
         log.delete("1.0", "end")
