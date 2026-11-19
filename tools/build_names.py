@@ -119,6 +119,63 @@ def guess_name(event_names):
     return "_".join(parts)
 
 
+def shared_parts(names):
+    """Name parts used by at least 3/4 of the names (so one odd sibling doesn't wipe out the species)."""
+    counts = Counter(p.lower() for n in names for p in set(n.split("_")) if p.lower() != "shared")
+    keep = {p for p, c in counts.items() if c >= 0.75 * len(names)}
+    seen, parts = set(), []
+    for n in names:
+        for p in n.split("_"):
+            if p.lower() in keep and p.lower() not in seen:
+                seen.add(p.lower())
+                parts.append(p)
+    return parts
+
+
+def neighbour_names(hircs, known):
+    """wem id -> a name borrowed from the named sounds sharing its nearest Wwise container.
+
+    Wwise groups sounds into containers (often one per animal or action). An unnamed sound in the
+    same container as named lion sounds is a lion sound too, so it gets "Unknown_AfricanLion_...".
+    """
+    parent, wem_nodes = {}, {}
+    for h in hircs:
+        children = children_of(h)
+        for child_id in (children if children is not None else ()):
+            parent.setdefault(int(child_id), h.data.id)
+        sources = []
+        if h.id == HircType.SOUND:
+            sources = [h.data.ak_bank_source_data]
+        elif h.id == HircType.MUSIC_TRACK:
+            sources = h.data.ak_bank_source_data
+        for sbi in sources:
+            wem_nodes.setdefault(fmt_hash(sbi.ak_media_information.source_i_d), []).append(h.data.id)
+
+    def ancestors(node):
+        seen = set()
+        while node in parent and node not in seen:
+            seen.add(node)
+            node = parent[node]
+            yield node
+
+    named_under = {}
+    for wem_id, name in known.items():
+        for node in wem_nodes.get(wem_id, ()):
+            for anc in ancestors(node):
+                named_under.setdefault(anc, []).append(name)
+    borrowed = {}
+    for wem_id, nodes in wem_nodes.items():
+        if wem_id in known:
+            continue
+        for anc in ancestors(nodes[0]):
+            if anc in named_under:
+                parts = shared_parts(named_under[anc])
+                if parts:
+                    borrowed[wem_id] = "Unknown_" + "_".join(parts)
+                break
+    return borrowed
+
+
 def riff_hash(data):
     data = bytes(data)
     if data[:4] == b"RIFF":
@@ -152,17 +209,20 @@ def main():
             except Exception as e:
                 print(f"  {bank}: could not read ({e})")
                 continue
-            wem_events = {}
+            wem_events, hircs = {}, []
             for fp in event_bnks:
                 events = BnkFile()
                 events.load(fp)
                 if not events.aux_b.hirc:
                     continue
+                hircs.extend(events.aux_b.hirc.hirc_pointers)
                 sid_2_hirc = {h.data.id: h for h in events.aux_b.hirc.hirc_pointers}
                 for h in events.aux_b.hirc.hirc_pointers:
                     if h.id == HircType.EVENT:
                         name = lut.get(h.data.id, f"0x{fmt_hash(h.data.id)}")
                         walk(h, sid_2_hirc, name, wem_events, set())
+            known = {w: n for w, e in wem_events.items() if not (n := guess_name(e)).startswith("Unknown")}
+            borrowed = neighbour_names(hircs, known)
             counts = Counter()
             for fp in media_bnks:
                 media = BnkFile()
@@ -177,15 +237,16 @@ def main():
                     if getattr(ptr, "data", None):
                         copies.setdefault(wem_id, []).append(ptr.data)
                 for wem_id, datas in copies.items():
-                    raw = guess_name(wem_events.get(wem_id, ()))
-                    stats["unknown" if raw.startswith("Unknown") else "named"] += 1
+                    raw = known.get(wem_id) or borrowed.get(wem_id) or guess_name(wem_events.get(wem_id, ()))
+                    stats["borrowed" if wem_id in borrowed else "unknown" if raw.startswith("Unknown") else "named"] += 1
                     for data in datas:
                         table[riff_hash(data)] = f"{raw}_{counts[raw]:02d}"
                     counts[raw] += 1
             print(f"  {bank}: {sum(counts.values())} sounds")
     with gzip.open(out_path, "wt", encoding="utf-8") as f:
         json.dump(table, f, separators=(",", ":"))
-    print(f"Wrote {len(table)} entries to {out_path}: {stats['named']} named, {stats['unknown']} unknown")
+    print(f"Wrote {len(table)} entries to {out_path}: {stats['named']} named, "
+          f"{stats['borrowed']} named from neighbours, {stats['unknown']} unknown")
 
 
 main()
