@@ -44,6 +44,8 @@ The names come from `names.json.gz`, built by `tools/build_names.py` using [cobr
 
 ## Notes
 
+- Converting uses half your CPU cores at below-normal priority, and pipes vgmstream straight into ffmpeg (no temporary .wav files), so the PC stays usable during a full export.
+
 - When converting, pieces that can't be decoded are skipped and deleted. They're cut-off preload copies inside the `.ovl` archives (the full sound is in the `.aux`), or stray bytes that only look like a sound.
 
 - Most game sounds are stored at 16 kHz mono (phone-call quality) to save space, so they sound a bit dull even as WAV. FLAC and WAV keep that quality exactly; OGG is saved at quality 8.

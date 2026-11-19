@@ -129,29 +129,41 @@ def convert(out_dir, fmt, vgmstream, ffmpeg):
     """Turn every extracted .wem into fmt. If that step fails (or there's no ffmpeg) the sound stays as .wav.
     A .wem vgmstream can't decode at all is deleted: those are cut-off preload copies inside the .ovl
     archives (the full sound is in the .aux) or stray bytes that only look like a sound."""
-    # No console window popping up per call when running as the windowed exe.
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # No console window per call, and below-normal priority so the PC stays responsive during a long export.
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+
+    def to_wav(wem, wav):
+        return subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True,
+                              creationflags=flags).returncode == 0
+
+    def piped(wem, dest):
+        """vgmstream decodes straight into ffmpeg, so no temporary .wav is written (less disk and virus-scan work)."""
+        decode = subprocess.Popen([vgmstream, "-p", str(wem)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  creationflags=flags)
+        encode = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "wav", "-i", "pipe:0",
+                                 *QUALITY.get(fmt, []), str(dest)], stdin=decode.stdout, capture_output=True,
+                                creationflags=flags)
+        decode.stdout.close()
+        return decode.wait() == 0 and encode.returncode == 0
 
     def one(wem):
-        wav = wem.with_suffix(".wav")
-        if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True, creationflags=flags).returncode:
+        wav, dest = wem.with_suffix(".wav"), wem.with_suffix("." + fmt)
+        if fmt != "wav" and ffmpeg:
+            if piped(wem, dest):
+                wem.unlink()
+                return fmt
+            dest.unlink(missing_ok=True)
+        if not to_wav(wem, wav):
             wem.unlink()
             wav.unlink(missing_ok=True)
             return "broken"
         wem.unlink()
-        if fmt == "wav" or not ffmpeg:
-            return "wav"
-        r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *QUALITY.get(fmt, []),
-                            str(wav.with_suffix("." + fmt))], capture_output=True, creationflags=flags)
-        if r.returncode:
-            wav.with_suffix("." + fmt).unlink(missing_ok=True)
-            return "wav"
-        wav.unlink()
-        return fmt
+        return "wav"
 
     wems = list(out_dir.rglob("*.wem"))
     results = Counter()
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+    # Half the cores: converting is quick, and leaving the rest free keeps games and browsers smooth.
+    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 4) // 2)) as pool:
         for i, result in enumerate(pool.map(one, wems), 1):
             results[result] += 1
             if i % 25 == 0 or i == len(wems):
