@@ -167,12 +167,20 @@ def main():
             for fp in media_bnks:
                 media = BnkFile()
                 media.load(fp)
+                # A streamed sound has its full copy in the _S aux (what the extractor scans) and often a
+                # short prefetch copy in the bank too. ptr_map keeps only one, so hash every copy.
+                copies = {}
+                for stream in media.bnk_header.streams:
+                    if getattr(stream, "data", None):
+                        copies.setdefault(fmt_hash(stream.event_id), []).append(stream.data)
                 for wem_id, ptr in media.ptr_map.items():
-                    if not getattr(ptr, "data", None):
-                        continue
+                    if getattr(ptr, "data", None):
+                        copies.setdefault(wem_id, []).append(ptr.data)
+                for wem_id, datas in copies.items():
                     raw = guess_name(wem_events.get(wem_id, ()))
                     stats["unknown" if raw.startswith("Unknown") else "named"] += 1
-                    table[riff_hash(ptr.data)] = f"{raw}_{counts[raw]:02d}"
+                    for data in datas:
+                        table[riff_hash(data)] = f"{raw}_{counts[raw]:02d}"
                     counts[raw] += 1
             print(f"  {bank}: {sum(counts.values())} sounds")
     with gzip.open(out_path, "wt", encoding="utf-8") as f:
