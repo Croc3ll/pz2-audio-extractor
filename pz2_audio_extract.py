@@ -31,17 +31,26 @@ MIN_BLOB = 64
 
 
 def find_riff_blobs(data):
-    """Yield (offset, size) for every RIFF/WAVE blob with a fmt chunk."""
+    """Yield (offset, size) for every RIFF/WAVE blob with a believable fmt chunk."""
     pos = data.find(b"RIFF")
     end = len(data)
     while pos != -1:
         if pos + 12 <= end and data[pos + 8:pos + 12] == b"WAVE":
             size = struct.unpack_from("<I", data, pos + 4)[0] + 8
-            if MIN_BLOB <= size and pos + size <= end and data.find(b"fmt ", pos + 12, pos + 64) != -1:
+            if MIN_BLOB <= size and pos + size <= end and plausible_fmt(data, pos):
                 yield pos, size
                 pos = data.find(b"RIFF", pos + size)
                 continue
         pos = data.find(b"RIFF", pos + 4)
+
+
+def plausible_fmt(data, pos):
+    """Bytes that only look like a RIFF header have nonsense channel counts or sample rates (like 684 MHz)."""
+    fmt = data.find(b"fmt ", pos + 12, pos + 64)
+    if fmt == -1 or fmt + 16 > len(data):
+        return False
+    channels, rate = struct.unpack_from("<HI", data, fmt + 10)
+    return 1 <= channels <= 8 and 8000 <= rate <= 192000
 
 
 def load_names():
@@ -54,11 +63,17 @@ def load_names():
         return {}
 
 
-def category_of(path):
-    """animals_media_animals_media_bnk_S.aux -> animals (the game's audio folders are <category>_Media)."""
-    stem = path.stem
-    cut = stem.lower().find("_media")
-    return stem[:cut] if cut > 0 else None
+def category_of(rel):
+    """The output folder for a game file, relative to the game folder.
+
+    animals_media_animals_media_bnk_S.aux -> animals (the game's audio folders are <category>_Media).
+    Content_Localised/Audio/English(GB)/... -> voice/English(GB) (voice-over, one folder per language).
+    """
+    parts = rel.parts
+    if "Content_Localised" in parts and "Audio" in parts[:-2]:
+        return Path("voice", parts[parts.index("Audio") + 1])
+    cut = rel.stem.lower().find("_media")
+    return Path(rel.stem[:cut]) if cut > 0 else None
 
 
 def safe(name):
@@ -70,7 +85,7 @@ def scan_file(path, out_dir, seen, root, names, only=""):
     try:
         with open(path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
             rel = path.relative_to(root).with_suffix("")
-            category = category_of(path)
+            category = category_of(path.relative_to(root))
             folder = out_dir / category if category else out_dir / rel.parent
             for offset, size in find_riff_blobs(data):
                 blob = data[offset:offset + size]
@@ -109,15 +124,18 @@ def find_tool(path_or_name):
 
 
 def convert(out_dir, fmt, vgmstream, ffmpeg):
-    """Turn every extracted .wem into fmt. If that step fails (or there's no ffmpeg) the sound stays as .wav;
-    only a sound vgmstream can't decode at all stays as .wem."""
+    """Turn every extracted .wem into fmt. If that step fails (or there's no ffmpeg) the sound stays as .wav.
+    A .wem vgmstream can't decode at all is deleted: those are cut-off preload copies inside the .ovl
+    archives (the full sound is in the .aux) or stray bytes that only look like a sound."""
     # No console window popping up per call when running as the windowed exe.
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     def one(wem):
         wav = wem.with_suffix(".wav")
         if subprocess.run([vgmstream, "-o", str(wav), str(wem)], capture_output=True, creationflags=flags).returncode:
-            return "wem"
+            wem.unlink()
+            wav.unlink(missing_ok=True)
+            return "broken"
         wem.unlink()
         if fmt == "wav" or not ffmpeg:
             return "wav"
@@ -139,8 +157,8 @@ def convert(out_dir, fmt, vgmstream, ffmpeg):
     print(f"\nConverted {results[fmt]}/{len(wems)} to .{fmt}")
     if fmt != "wav" and results["wav"]:
         print(f"  {results['wav']} couldn't be made .{fmt}, so they were saved as .wav instead")
-    if results["wem"]:
-        print(f"  {results['wem']} couldn't be decoded and were left as .wem")
+    if results["broken"]:
+        print(f"  Skipped {results['broken']} broken pieces (cut-off copies, not real sounds)")
 
 
 def main(argv=None):

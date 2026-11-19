@@ -36,13 +36,15 @@ python pz2_audio_extract.py "<game folder>" out --format flac --vgmstream C:/too
 
 ## Sound names
 
-Sounds are sorted into a folder per category (`animals`, `music`, `crowd`, `staff`, ...) and named after the Wwise event that plays them, e.g. `animals/ds_Vox_Call_BactrianCamel_adult_01.wav`. The number at the end separates variations of the same sound.
+Sounds are sorted into a folder per category (`animals`, `music`, `crowd`, `staff`, ..., plus `voice/<language>` for the career voice-over) and named after the Wwise event that plays them, e.g. `animals/ds_Vox_Call_BactrianCamel_adult_01.wav`. The number at the end separates variations of the same sound.
 
 About 13,000 sounds get a real name (the event names Planet Zoo 2 keeps in its data files; the rest it only stores as numbers). Sounds whose event name isn't known get `Unknown_<event id>_NN` (variations stay together), and sounds that no event plays get `Unknown_NN`. If a game update changes a sound, it falls back to `<source>_<offset>`.
 
 The names come from `names.json.gz`, built by `tools/build_names.py` using [cobra-tools](https://github.com/OpenNaja/cobra-tools) (see the script for how to rerun it after a game update).
 
 ## Notes
+
+- When converting, pieces that can't be decoded are skipped and deleted. They're cut-off preload copies inside the `.ovl` archives (the full sound is in the `.aux`), or stray bytes that only look like a sound.
 
 - Most game sounds are stored at 16 kHz mono (phone-call quality) to save space, so they sound a bit dull even as WAV. FLAC and WAV keep that quality exactly; OGG is saved at quality 8.
 
